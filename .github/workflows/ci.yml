@@ -19,13 +19,14 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18
+          node-version: 20
+          cache: 'npm'
 
-      - name: Upgrade npm to latest stable
-        run: npm install -g npm@latest
+      - name: Patch package manager protocol
+        run: find . -name "package.json" -not -path "*/node_modules/*" -exec sed -i 's/"workspace:\*"/"*"/g' {} +
 
       - name: Install workspace dependencies
-        run: npm install --include=dev
+        run: npm install
 
       - name: Run TypeScript checks
         run: npm run typecheck
