@@ -16,25 +16,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9 # Matches your local environment setup
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 18
-          cache: 'pnpm'
+          cache: 'npm' # Configures caching back to look for package-lock.json
 
       - name: Install workspace dependencies
-        run: pnpm install --frozen-lockfile
+        run: npm install # Handles native npm workspace linking cleanly in CI
 
       - name: Run TypeScript checks
-        run: pnpm run typecheck
+        run: npm run typecheck
 
       - name: Run application build
-        run: pnpm run build
+        run: npm run build
 
       - name: Run documentation build
-        run: pnpm run build:docs
+        run: npm run build:docs
