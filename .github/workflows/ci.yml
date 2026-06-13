@@ -38,8 +38,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
 
+      - name: Patch package manager protocol
+        # Converts pnpm's "workspace:*" to npm's "*" natively so npm install doesn't crash
+        run: find . -name "package.json" -not -path "*/node_modules/*" -exec sed -i 's/"workspace:\*"/"*"/g' {} +
+
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        # Replaced 'npm ci' with 'npm install' to allow the patched workspaces to link properly
+        run: npm install
 
       - name: Build workspace packages
         run: pnpm --filter @guildpass/integration-client build --if-present
@@ -48,9 +53,11 @@ jobs:
       - name: Run build
         run: pnpm build
 
+      - name: Run documentation build
+        run: npm run build:docs
+
       - name: Run linting
         run: pnpm lint
 
       - name: Run typecheck
-        run: pnpm typecheck
-
+        run: npm run typecheck
