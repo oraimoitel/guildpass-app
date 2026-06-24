@@ -1,11 +1,12 @@
-import { test, describe } from "node:test";
+﻿import { test, describe } from "node:test";
 import assert from "node:assert";
 import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { generateSignature } from "@guildpass/webhook-utils";
-import { activityStorage, FileActivityStorage } from "../lib/activity/storage";
-import { ActivityEvent } from "../lib/activity/types";
+import type { ActivityEvent } from "../lib/activity/types.js";
+
+const { generateSignature } = await import("@guildpass/webhook-utils");
+const { activityStorage, FileActivityStorage } = await import("../lib/activity/storage.js");
 
 // Note: In a real Next.js environment, we'd use a more sophisticated test runner
 // but for this task, we're demonstrating the core logic verification.
