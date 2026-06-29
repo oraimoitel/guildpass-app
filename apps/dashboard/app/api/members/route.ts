@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
-import { handleApiError, apiError } from "@/lib/api-helpers";
+import {
+  apiError,
+  apiResponse,
+  apiUnsupported,
+  apiValidationError,
+  handleApiError,
+} from "@/lib/api-helpers";
+import type { ApiFieldError } from "@/lib/api-contracts";
 import { mockMembers, type Member } from "@/lib/mock-data";
 import { MOCK_API_SESSION } from "@/lib/auth/session";
 import { assertPermission, PermissionDeniedError } from "@/lib/permissions";
@@ -36,7 +43,7 @@ export async function GET(request: Request): Promise<NextResponse> {
       try {
         if (wallet) {
           const m = await client.getMembershipByWallet(wallet);
-          if (!m) return NextResponse.json([], { status: 200 });
+          if (!m) return apiResponse([], { status: 200 });
           const mapped: Member = {
             id: m.userId,
             wallet: m.wallet ?? "",
@@ -46,12 +53,12 @@ export async function GET(request: Request): Promise<NextResponse> {
             joinedAt: m.updatedAt,
             lastActive: m.updatedAt,
           };
-          return NextResponse.json([mapped]);
+          return apiResponse([mapped]);
         }
 
         if (discordUserId) {
           const m = await client.getMembershipByDiscordUser(discordUserId);
-          if (!m) return NextResponse.json([], { status: 200 });
+          if (!m) return apiResponse([], { status: 200 });
           const mapped: Member = {
             id: m.userId,
             wallet: m.wallet ?? "",
@@ -61,11 +68,15 @@ export async function GET(request: Request): Promise<NextResponse> {
             joinedAt: m.updatedAt,
             lastActive: m.updatedAt,
           };
-          return NextResponse.json([mapped]);
+          return apiResponse([mapped]);
         }
 
         // We don't support listing all members via the core API here.
-        return apiError("Live mode requires a lookup (wallet or discordUserId)", 501);
+        return apiUnsupported(
+          "members.list",
+          apiMode,
+          "Live mode requires a lookup (wallet or discordUserId)"
+        );
       } catch (err) {
         console.error("Error fetching membership in live mode:", err);
         return apiError("Failed to retrieve membership from core", 502);
@@ -75,11 +86,11 @@ export async function GET(request: Request): Promise<NextResponse> {
     // Mock mode — return all members from configured repository
     try {
       const memberRepository = getMemberRepository();
-      return NextResponse.json(await memberRepository.getAll());
+      return apiResponse(await memberRepository.getAll());
     } catch (error) {
       console.error("Error fetching members:", error);
       // Fallback to mock data on error
-      return NextResponse.json(mockMembers as Member[]);
+      return apiResponse(mockMembers as Member[]);
     }
   });
 }
@@ -103,21 +114,21 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   return handleApiError(async () => {
     const body = await request.json();
+    const errors = validateMemberCreate(body);
+    if (errors.length > 0) {
+      return apiValidationError("Invalid member payload", errors);
+    }
 
-const memberRepository = getMemberRepository();
-
-const newMember = {
-  id: crypto.randomUUID(),
-  name: body.name ?? "Unknown",
-  wallet: body.wallet ?? "",
-  status: body.status ?? "pending",
-  roles: Array.isArray(body.roles) ? body.roles : [],
-  joinedAt: new Date().toISOString(),
-  lastActive: new Date().toISOString(),
-};
-
-return await memberRepository.create(newMember);;
-    return await memberRepository.create(body);
+    const memberRepository = getMemberRepository();
+    const now = new Date().toISOString();
+    return await memberRepository.create({
+      name: body.name.trim(),
+      wallet: body.wallet.trim(),
+      status: body.status ?? "pending",
+      roles: Array.isArray(body.roles) ? body.roles : [],
+      joinedAt: body.joinedAt ?? now,
+      lastActive: body.lastActive ?? now,
+    });
   });
 }
 
@@ -138,7 +149,11 @@ export async function PATCH(request: Request): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
 
-  if (!id) return apiError("Missing member ID", 400);
+  if (!id) {
+    return apiValidationError("Missing member ID", [
+      { field: "id", message: "id query parameter is required" },
+    ]);
+  }
 
   return handleApiError(async () => {
     const body = await request.json();
@@ -166,7 +181,11 @@ export async function DELETE(request: Request): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
 
-  if (!id) return apiError("Missing member ID", 400);
+  if (!id) {
+    return apiValidationError("Missing member ID", [
+      { field: "id", message: "id query parameter is required" },
+    ]);
+  }
 
   return handleApiError(async () => {
     const memberRepository = getMemberRepository();
@@ -174,4 +193,22 @@ export async function DELETE(request: Request): Promise<NextResponse> {
     if (!success) throw new Error("Member not found or deletion failed");
     return { success: true };
   });
+}
+
+function validateMemberCreate(body: any): ApiFieldError[] {
+  const errors: ApiFieldError[] = [];
+
+  if (typeof body?.name !== "string" || body.name.trim().length === 0) {
+    errors.push({ field: "name", message: "name is required" });
+  }
+
+  if (typeof body?.wallet !== "string" || body.wallet.trim().length === 0) {
+    errors.push({ field: "wallet", message: "wallet is required" });
+  }
+
+  if (body?.roles !== undefined && !Array.isArray(body.roles)) {
+    errors.push({ field: "roles", message: "roles must be an array" });
+  }
+
+  return errors;
 }

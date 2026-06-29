@@ -22,6 +22,7 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { useSession } from "@/lib/hooks/useSession";
 import { canEditSettings } from "@/lib/permissions";
 import { useOptimisticMutation } from "@/lib/hooks/useOptimisticMutation";
+import { readApiResult } from "@/lib/api-client";
 import { useState, useRef } from "react";
 
 export default function SettingsPage() {
@@ -42,18 +43,9 @@ export default function SettingsPage() {
         body: JSON.stringify(data),
       });
 
-      if (res.status === 403) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(`Access denied: ${body.error ?? "settings:write permission required"}`);
-      }
-
-      if (!res.ok) {
-        throw new Error("An unexpected error occurred. Please try again.");
-      }
-
-      return res.json();
+      return readApiResult<{ message: string }>(res);
     },
-    onOptimisticUpdate: (data) => {
+    onOptimisticUpdate: (_data) => {
       previousSettingsRef.current = { workspaceName, timezone, displayName, email };
       // Note: In a real app, we'd update the state with `data` here.
       // For this mock, we assume the form state is already updated via controlled inputs.

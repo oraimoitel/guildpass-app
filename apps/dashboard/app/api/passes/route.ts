@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { handleApiError, apiError } from "@/lib/api-helpers";
+import {
+  apiError,
+  apiUnsupported,
+  apiValidationError,
+  handleApiError,
+} from "@/lib/api-helpers";
+import type { ApiFieldError } from "@/lib/api-contracts";
 import { mockPasses, type Pass } from "@/lib/mock-data";
 import { MOCK_API_SESSION } from "@/lib/auth/session";
 import { assertPermission, PermissionDeniedError } from "@/lib/permissions";
@@ -17,7 +23,11 @@ export async function GET(): Promise<NextResponse> {
 
     if (apiMode === "live") {
       // IntegrationClient currently does not expose pass listing.
-      return apiError("Pass listing in live mode is not implemented", 501);
+      return apiUnsupported(
+        "passes.list",
+        apiMode,
+        "Pass listing in live mode is not implemented"
+      );
     }
 
     try {
@@ -50,8 +60,20 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   return handleApiError(async () => {
     const body = await request.json();
+    const errors = validatePassCreate(body);
+    if (errors.length > 0) {
+      return apiValidationError("Invalid pass payload", errors);
+    }
+
     const passRepository = getPassRepository();
-    return await passRepository.create(body);
+    return await passRepository.create({
+      name: body.name.trim(),
+      description: body.description.trim(),
+      status: body.status ?? "draft",
+      price: body.price,
+      maxSupply: body.maxSupply ?? null,
+      currentSupply: body.currentSupply ?? 0,
+    });
   });
 }
 
@@ -72,7 +94,11 @@ export async function PATCH(request: Request): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
 
-  if (!id) return apiError("Missing pass ID", 400);
+  if (!id) {
+    return apiValidationError("Missing pass ID", [
+      { field: "id", message: "id query parameter is required" },
+    ]);
+  }
 
   return handleApiError(async () => {
     const body = await request.json();
@@ -100,7 +126,11 @@ export async function DELETE(request: Request): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
 
-  if (!id) return apiError("Missing pass ID", 400);
+  if (!id) {
+    return apiValidationError("Missing pass ID", [
+      { field: "id", message: "id query parameter is required" },
+    ]);
+  }
 
   return handleApiError(async () => {
     const passRepository = getPassRepository();
@@ -108,4 +138,34 @@ export async function DELETE(request: Request): Promise<NextResponse> {
     if (!success) throw new Error("Pass not found or deletion failed");
     return { success: true };
   });
+}
+
+function validatePassCreate(body: any): ApiFieldError[] {
+  const errors: ApiFieldError[] = [];
+
+  if (typeof body?.name !== "string" || body.name.trim().length === 0) {
+    errors.push({ field: "name", message: "name is required" });
+  }
+
+  if (
+    typeof body?.description !== "string" ||
+    body.description.trim().length === 0
+  ) {
+    errors.push({ field: "description", message: "description is required" });
+  }
+
+  if (body?.price !== undefined && typeof body.price !== "number") {
+    errors.push({ field: "price", message: "price must be a number" });
+  }
+
+  if (body?.maxSupply !== undefined && body.maxSupply !== null) {
+    if (!Number.isInteger(body.maxSupply) || body.maxSupply < 0) {
+      errors.push({
+        field: "maxSupply",
+        message: "maxSupply must be a non-negative integer",
+      });
+    }
+  }
+
+  return errors;
 }
