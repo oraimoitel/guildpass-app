@@ -17,18 +17,22 @@
 import DashboardLayout from "@/components/DashboardLayout";
 import StatusBadge from "@/components/StatusBadge";
 import RoleEditor from "@/components/RoleEditor";
+import UnsupportedBanner from "@/components/UnsupportedBanner";
 import { mockMembers, type Member as MockMember } from "@/lib/mock-data";
 import { useSession } from "@/lib/hooks/useSession";
 import { canManageMembers } from "@/lib/permissions";
 import { useEffect, useState, useRef } from "react";
 import { useOptimisticMutation } from "@/lib/hooks/useOptimisticMutation";
+import { readApiResult } from "@/lib/api-client";
 
 export default function MembersPage() {
   const session = useSession();
   const canWrite = canManageMembers(session);
   const [members, setMembers] = useState<MockMember[]>(mockMembers);
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
+  const [listState, setListState] = useState<"loading" | "loaded" | "unsupported" | "error">("loading");
   const previousMembersRef = useRef<MockMember[]>(members);
+  const apiMode = getClientApiMode();
 
     const [isInviteOpen, setIsInviteOpen] = useState(false);
     const [inviteLoading, setInviteLoading] = useState(false);
@@ -43,9 +47,8 @@ export default function MembersPage() {
     async function load() {
       try {
         const res = await fetch("/api/members");
-        if (!res.ok) throw new Error("fetch failed");
-        const data = await res.json();
-        if (mounted && Array.isArray(data)) {
+        const data = await readApiResult<MockMember[]>(res);
+        if (mounted) {
           setMembers(data);
           previousMembersRef.current = data;
         }
@@ -58,7 +61,7 @@ export default function MembersPage() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [apiMode]);
 
   const updateMutation = useOptimisticMutation<MockMember, { id: string; data: Partial<MockMember> }>({
     mutationFn: async ({ id, data }) => {
@@ -67,11 +70,7 @@ export default function MembersPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to update member");
-      }
-      return res.json();
+      return readApiResult<MockMember>(res);
     },
     onOptimisticUpdate: ({ id, data }) => {
       previousMembersRef.current = members;
@@ -108,11 +107,7 @@ export default function MembersPage() {
       const res = await fetch(`/api/members?id=${id}`, {
         method: "DELETE",
       });
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to remove member");
-      }
-      return res.json();
+      return readApiResult<{ success: boolean }>(res);
     },
     onOptimisticUpdate: (id) => {
       previousMembersRef.current = members;
@@ -150,14 +145,30 @@ export default function MembersPage() {
 
   return (
     <DashboardLayout title="Members" session={session}>
+      {/* ── Unsupported banner (live mode) ──────────────────────────────── */}
+      {listState === "unsupported" && (
+        <UnsupportedBanner resource="members" />
+      )}
+
+      {/* ── Error banner (live mode network error) ─────────────────────── */}
+      {listState === "error" && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 my-4">
+          <p className="text-sm text-red-700">
+            Failed to load members from the server. Check your API configuration and try again.
+          </p>
+        </div>
+      )}
+
       {/* ── Page header ─────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between mb-6">
         <p className="text-sm text-slate-500">
-          {members.length} member{members.length !== 1 ? "s" : ""} total
+          {listState === "unsupported"
+            ? "Member listing unavailable in live mode"
+            : `${members.length} member${members.length !== 1 ? "s" : ""} total`}
         </p>
 
         {/* Invite button — write roles only */}
-        {canWrite && (
+        {canWrite && listState !== "unsupported" && (
           <button
                id="btn-invite-member"
                onClick={() => setIsInviteOpen(true)}
@@ -224,12 +235,7 @@ export default function MembersPage() {
         }),
       });
 
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Failed to invite member");
-      }
-
-      const newMember = await res.json();
+      const newMember = await readApiResult<MockMember>(res);
 
 // Fallback safety (prevents roles/status undefined bugs)
 const safeMember = {
@@ -262,6 +268,7 @@ setMembers((prev) => [safeMember, ...prev]);
 )}
 
       {/* ── Members table ───────────────────────────────────────────────── */}
+      {listState !== "unsupported" && (
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
@@ -325,6 +332,7 @@ setMembers((prev) => [safeMember, ...prev]);
           </table>
         </div>
       </div>
+      )}
     </DashboardLayout>
   );
 }
