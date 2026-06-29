@@ -20,6 +20,7 @@ export interface ApiErrorResponse {
   ok: false;
   code: ApiErrorCode;
   error: string;
+  errorId?: string;
 }
 
 export interface ApiValidationErrorResponse {

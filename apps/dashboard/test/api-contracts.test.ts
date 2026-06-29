@@ -84,7 +84,8 @@ describe("dashboard API response contract", () => {
     assert.equal(response.status, 500);
     assert.equal(body.ok, false);
     assert.equal(body.code, "SERVER_ERROR");
-    assert.equal(body.error, "database unavailable");
+    assert.equal(body.error, "An unexpected error occurred");
+    assert.equal(typeof body.errorId, "string");
   });
 
   test("builds unsupported responses from the shared helper", async () => {
@@ -109,4 +110,3 @@ function restoreEnv(name: string, value: string | undefined) {
     process.env[name] = value;
   }
 }
-
