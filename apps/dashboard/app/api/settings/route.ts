@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { handleApiError, apiError } from "@/lib/api-helpers";
-import { requireDashboardSession, UnauthorizedError } from "@/lib/auth/server-session";
+import { apiError, apiValidationError, handleApiError } from "@/lib/api-helpers";
+import { MOCK_API_SESSION } from "@/lib/auth/session";
 import { assertPermission, PermissionDeniedError } from "@/lib/permissions";
 import { getSettingsRepository } from "@/lib/repositories/factory";
 import { validateSettingsPatch } from "@/lib/validation/settings";
@@ -49,15 +49,14 @@ export async function PATCH(request: Request): Promise<NextResponse> {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Request body must be valid JSON." }, { status: 400 });
+    return apiValidationError("Request body must be valid JSON.", [
+      { field: "_root", message: "Request body must be valid JSON." },
+    ]);
   }
 
   const result = validateSettingsPatch(body);
   if (!result.ok) {
-    return NextResponse.json(
-      { error: "Invalid settings", errors: result.errors },
-      { status: 400 }
-    );
+    return apiValidationError("Invalid settings", result.errors);
   }
 
   return handleApiError(async () => {

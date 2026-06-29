@@ -7,6 +7,7 @@ import LastUpdated from "@/components/LastUpdated";
 import UnsupportedBanner from "@/components/UnsupportedBanner";
 import { useActivityFeed } from "@/lib/hooks/useActivityFeed";
 import { mockPasses, mockGuilds, mockMembers, type Member as MockMember } from "@/lib/mock-data";
+import { readApiResult } from "@/lib/api-client";
 import { useEffect, useState } from "react";
 import { fetchList } from "@/lib/fetch-list";
 import { getClientApiMode } from "@/lib/client-env";
@@ -31,35 +32,26 @@ export default function DashboardPage() {
   useEffect(() => {
     let mounted = true;
     async function load() {
-      const unsupported: UnsupportedResource[] = [];
-      let encounteredError = false;
+      try {
+        const [passesRes, guildsRes, membersRes] = await Promise.all([
+          fetch('/api/passes'),
+          fetch('/api/guilds'),
+          fetch('/api/members'),
+        ]);
 
-      const [passesResult, guildsResult, membersResult] = await Promise.all([
-        fetchList<unknown>("/api/passes"),
-        fetchList<unknown>("/api/guilds"),
-        fetchList<unknown>("/api/members"),
-      ]);
+        if (mounted) {
+          const [passes, guilds, members] = await Promise.all([
+            readApiResult<typeof mockPasses>(passesRes),
+            readApiResult<typeof mockGuilds>(guildsRes),
+            readApiResult<MockMember[]>(membersRes),
+          ]);
 
-      if (!mounted) return;
-
-      // ── Passes ──────────────────────────────────────────────
-      if (passesResult.ok) {
-        setPassesCount(passesResult.data.length);
-      } else if (passesResult.code === "UNSUPPORTED_IN_LIVE_MODE") {
-        unsupported.push("passes");
-        // Stay with mock count so stat cards still render
-      } else if (apiMode === "live") {
-        encounteredError = true;
-      }
-      // Mock mode: stay with mock count (already set)
-
-      // ── Guilds ──────────────────────────────────────────────
-      if (guildsResult.ok) {
-        setGuildsCount(guildsResult.data.length);
-      } else if (guildsResult.code === "UNSUPPORTED_IN_LIVE_MODE") {
-        unsupported.push("guilds");
-      } else if (apiMode === "live") {
-        encounteredError = true;
+          setPassesCount(passes.length);
+          setGuildsCount(guilds.length);
+          setActiveMembersCount(members.filter((mm) => mm.status === 'active').length);
+        }
+      } catch (err) {
+        console.warn('Dashboard stats fetch failed, using mock counts', err);
       }
 
       // ── Members ─────────────────────────────────────────────

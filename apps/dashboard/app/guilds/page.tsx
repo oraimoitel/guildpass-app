@@ -7,8 +7,7 @@ import { useEffect, useState, useRef } from "react";
 import { useSession } from "@/lib/hooks/useSession";
 import { canManageGuilds } from "@/lib/permissions";
 import { useOptimisticMutation } from "@/lib/hooks/useOptimisticMutation";
-import { fetchList } from "@/lib/fetch-list";
-import { getClientApiMode } from "@/lib/client-env";
+import { readApiResult } from "@/lib/api-client";
 
 export default function GuildsPage() {
   const session = useSession();
@@ -22,23 +21,15 @@ export default function GuildsPage() {
   useEffect(() => {
     let mounted = true;
     async function load() {
-      setListState("loading");
-
-      const result = await fetchList<MockGuild>("/api/guilds");
-
-      if (!mounted) return;
-
-      if (result.ok) {
-        setGuilds(result.data);
-        previousGuildsRef.current = result.data;
-        setListState("loaded");
-      } else if (result.code === "UNSUPPORTED_IN_LIVE_MODE") {
-        setListState("unsupported");
-      } else if (apiMode === "live") {
-        setListState("error");
-      } else {
-        console.warn("[GuildsPage] Fetch failed, using mock data:", result.message);
-        setListState("loaded");
+      try {
+        const res = await fetch("/api/guilds");
+        const data = await readApiResult<MockGuild[]>(res);
+        if (mounted) {
+          setGuilds(data);
+          previousGuildsRef.current = data;
+        }
+      } catch (err) {
+        console.warn("Falling back to mock guilds:", err);
       }
     }
     load();
@@ -54,11 +45,7 @@ export default function GuildsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to update guild");
-      }
-      return res.json();
+      return readApiResult<MockGuild>(res);
     },
     onOptimisticUpdate: ({ id, data }) => {
       previousGuildsRef.current = guilds;
@@ -95,11 +82,7 @@ export default function GuildsPage() {
       const res = await fetch(`/api/guilds?id=${id}`, {
         method: "DELETE",
       });
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to delete guild");
-      }
-      return res.json();
+      return readApiResult<{ success: boolean }>(res);
     },
     onOptimisticUpdate: (id) => {
       previousGuildsRef.current = guilds;
