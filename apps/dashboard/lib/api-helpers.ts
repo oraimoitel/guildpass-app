@@ -72,6 +72,21 @@ function newErrorId(): string {
   );
 }
 
+/**
+ * Returns a 501 response indicating that this endpoint is not available in live mode.
+ * The client-side code checks for the `code` field to distinguish unsupported live
+ * operations from transient errors, so it can show an appropriate UI instead of
+ * silently falling back to mock data.
+ */
+export function apiUnsupported(
+  message: string
+): NextResponse<UnsupportedResponse> {
+  return NextResponse.json(
+    { error: message, code: "UNSUPPORTED_IN_LIVE_MODE" },
+    { status: 501 }
+  );
+}
+
 export async function handleApiError<T>(
   fn: () => Promise<T | NextResponse>
 ): Promise<NextResponse<ApiResult<T>>> {

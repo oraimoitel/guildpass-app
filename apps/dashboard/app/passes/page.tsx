@@ -17,6 +17,7 @@
 
 import DashboardLayout from "@/components/DashboardLayout";
 import StatusBadge from "@/components/StatusBadge";
+import UnsupportedBanner from "@/components/UnsupportedBanner";
 import { mockPasses, type Pass as MockPass } from "@/lib/mock-data";
 import { useSession } from "@/lib/hooks/useSession";
 import { canManagePasses } from "@/lib/permissions";
@@ -29,7 +30,9 @@ export default function PassesPage() {
   const canWrite = canManagePasses(session);
   const [passes, setPasses] = useState<MockPass[]>(mockPasses);
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
+  const [listState, setListState] = useState<"loading" | "loaded" | "unsupported" | "error">("loading");
   const previousPassesRef = useRef<MockPass[]>(passes);
+  const apiMode = getClientApiMode();
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [createLoading, setCreateLoading] = useState(false);
@@ -58,7 +61,7 @@ export default function PassesPage() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [apiMode]);
 
   const updateMutation = useOptimisticMutation<MockPass, { id: string; data: Partial<MockPass> }>({
     mutationFn: async ({ id, data }) => {
@@ -114,10 +117,26 @@ export default function PassesPage() {
 
   return (
     <DashboardLayout title="Passes" session={session}>
+      {/* ── Unsupported banner (live mode) ──────────────────────────────── */}
+      {listState === "unsupported" && (
+        <UnsupportedBanner resource="passes" />
+      )}
+
+      {/* ── Error banner (live mode network error) ─────────────────────── */}
+      {listState === "error" && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 my-4">
+          <p className="text-sm text-red-700">
+            Failed to load passes from the server. Check your API configuration and try again.
+          </p>
+        </div>
+      )}
+
       {/* ── Page header ─────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between mb-6">
         <p className="text-sm text-slate-500">
-          {passes.length} pass{passes.length !== 1 ? "es" : ""} total
+          {listState === "unsupported"
+            ? "Pass listing unavailable in live mode"
+            : `${passes.length} pass${passes.length !== 1 ? "es" : ""} total`}
         </p>
 
         {/* Create button — write roles only */}
@@ -228,6 +247,7 @@ export default function PassesPage() {
 )}
 
       {/* ── Passes table ────────────────────────────────────────────────── */}
+      {listState !== "unsupported" && (
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
@@ -295,6 +315,7 @@ export default function PassesPage() {
           </table>
         </div>
       </div>
+      )}
     </DashboardLayout>
   );
 }

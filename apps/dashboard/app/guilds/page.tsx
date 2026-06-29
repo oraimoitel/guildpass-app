@@ -1,6 +1,7 @@
 "use client";
 
 import DashboardLayout from "@/components/DashboardLayout";
+import UnsupportedBanner from "@/components/UnsupportedBanner";
 import { mockGuilds, type Guild as MockGuild } from "@/lib/mock-data";
 import { useEffect, useState, useRef } from "react";
 import { useSession } from "@/lib/hooks/useSession";
@@ -13,7 +14,9 @@ export default function GuildsPage() {
   const canWrite = canManageGuilds(session);
   const [guilds, setGuilds] = useState<MockGuild[]>(mockGuilds);
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
+  const [listState, setListState] = useState<"loading" | "loaded" | "unsupported" | "error">("loading");
   const previousGuildsRef = useRef<MockGuild[]>(guilds);
+  const apiMode = getClientApiMode();
 
   useEffect(() => {
     let mounted = true;
@@ -33,7 +36,7 @@ export default function GuildsPage() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [apiMode]);
 
   const updateMutation = useOptimisticMutation<MockGuild, { id: string; data: Partial<MockGuild> }>({
     mutationFn: async ({ id, data }) => {
@@ -117,6 +120,21 @@ export default function GuildsPage() {
 
   return (
     <DashboardLayout title="Guilds" session={session}>
+      {/* ── Unsupported banner (live mode) ──────────────────────────────── */}
+      {listState === "unsupported" && (
+        <UnsupportedBanner resource="guilds" />
+      )}
+
+      {/* ── Error banner (live mode network error) ─────────────────────── */}
+      {listState === "error" && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 my-4">
+          <p className="text-sm text-red-700">
+            Failed to load guilds from the server. Check your API configuration and try again.
+          </p>
+        </div>
+      )}
+
+      {listState !== "unsupported" && (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {guilds.map((guild) => {
           const isPending = pendingIds.has(guild.id);
@@ -159,6 +177,7 @@ export default function GuildsPage() {
           );
         })}
       </div>
+      )}
     </DashboardLayout>
   );
 }

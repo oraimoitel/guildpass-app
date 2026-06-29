@@ -16,6 +16,7 @@
 
 import DashboardLayout from "@/components/DashboardLayout";
 import StatusBadge from "@/components/StatusBadge";
+import UnsupportedBanner from "@/components/UnsupportedBanner";
 import { mockMembers, type Member as MockMember } from "@/lib/mock-data";
 import { useSession } from "@/lib/hooks/useSession";
 import { canManageMembers } from "@/lib/permissions";
@@ -28,7 +29,9 @@ export default function MembersPage() {
   const canWrite = canManageMembers(session);
   const [members, setMembers] = useState<MockMember[]>(mockMembers);
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
+  const [listState, setListState] = useState<"loading" | "loaded" | "unsupported" | "error">("loading");
   const previousMembersRef = useRef<MockMember[]>(members);
+  const apiMode = getClientApiMode();
 
     const [isInviteOpen, setIsInviteOpen] = useState(false);
     const [inviteLoading, setInviteLoading] = useState(false);
@@ -57,7 +60,7 @@ export default function MembersPage() {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [apiMode]);
 
   const updateMutation = useOptimisticMutation<MockMember, { id: string; data: Partial<MockMember> }>({
     mutationFn: async ({ id, data }) => {
@@ -145,14 +148,30 @@ export default function MembersPage() {
 
   return (
     <DashboardLayout title="Members" session={session}>
+      {/* ── Unsupported banner (live mode) ──────────────────────────────── */}
+      {listState === "unsupported" && (
+        <UnsupportedBanner resource="members" />
+      )}
+
+      {/* ── Error banner (live mode network error) ─────────────────────── */}
+      {listState === "error" && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-4 my-4">
+          <p className="text-sm text-red-700">
+            Failed to load members from the server. Check your API configuration and try again.
+          </p>
+        </div>
+      )}
+
       {/* ── Page header ─────────────────────────────────────────────────── */}
       <div className="flex items-center justify-between mb-6">
         <p className="text-sm text-slate-500">
-          {members.length} member{members.length !== 1 ? "s" : ""} total
+          {listState === "unsupported"
+            ? "Member listing unavailable in live mode"
+            : `${members.length} member${members.length !== 1 ? "s" : ""} total`}
         </p>
 
         {/* Invite button — write roles only */}
-        {canWrite && (
+        {canWrite && listState !== "unsupported" && (
           <button
                id="btn-invite-member"
                onClick={() => setIsInviteOpen(true)}
@@ -252,6 +271,7 @@ setMembers((prev) => [safeMember, ...prev]);
 )}
 
       {/* ── Members table ───────────────────────────────────────────────── */}
+      {listState !== "unsupported" && (
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
@@ -331,6 +351,7 @@ setMembers((prev) => [safeMember, ...prev]);
           </table>
         </div>
       </div>
+      )}
     </DashboardLayout>
   );
 }
