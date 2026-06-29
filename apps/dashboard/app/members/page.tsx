@@ -22,8 +22,7 @@ import { useSession } from "@/lib/hooks/useSession";
 import { canManageMembers } from "@/lib/permissions";
 import { useEffect, useState, useRef } from "react";
 import { useOptimisticMutation } from "@/lib/hooks/useOptimisticMutation";
-import { fetchList } from "@/lib/fetch-list";
-import { getClientApiMode } from "@/lib/client-env";
+import { readApiResult } from "@/lib/api-client";
 
 export default function MembersPage() {
   const session = useSession();
@@ -45,23 +44,16 @@ export default function MembersPage() {
   useEffect(() => {
     let mounted = true;
     async function load() {
-      setListState("loading");
-
-      const result = await fetchList<MockMember>("/api/members");
-
-      if (!mounted) return;
-
-      if (result.ok) {
-        setMembers(result.data);
-        previousMembersRef.current = result.data;
-        setListState("loaded");
-      } else if (result.code === "UNSUPPORTED_IN_LIVE_MODE") {
-        setListState("unsupported");
-      } else if (apiMode === "live") {
-        setListState("error");
-      } else {
-        console.warn("[MembersPage] Fetch failed, using mock data:", result.message);
-        setListState("loaded");
+      try {
+        const res = await fetch("/api/members");
+        const data = await readApiResult<MockMember[]>(res);
+        if (mounted) {
+          setMembers(data);
+          previousMembersRef.current = data;
+        }
+      } catch (err) {
+        // fallback to mockMembers (already the default)
+        console.warn("Falling back to mock members:", err);
       }
     }
     load();
@@ -77,11 +69,7 @@ export default function MembersPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to update member");
-      }
-      return res.json();
+      return readApiResult<MockMember>(res);
     },
     onOptimisticUpdate: ({ id, data }) => {
       previousMembersRef.current = members;
@@ -118,11 +106,7 @@ export default function MembersPage() {
       const res = await fetch(`/api/members?id=${id}`, {
         method: "DELETE",
       });
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to remove member");
-      }
-      return res.json();
+      return readApiResult<{ success: boolean }>(res);
     },
     onOptimisticUpdate: (id) => {
       previousMembersRef.current = members;
@@ -254,12 +238,7 @@ export default function MembersPage() {
         }),
       });
 
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Failed to invite member");
-      }
-
-      const newMember = await res.json();
+      const newMember = await readApiResult<MockMember>(res);
 
 // Fallback safety (prevents roles/status undefined bugs)
 const safeMember = {

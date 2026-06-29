@@ -23,8 +23,7 @@ import { useSession } from "@/lib/hooks/useSession";
 import { canManagePasses } from "@/lib/permissions";
 import { useEffect, useState, useRef } from "react";
 import { useOptimisticMutation } from "@/lib/hooks/useOptimisticMutation";
-import { fetchList } from "@/lib/fetch-list";
-import { getClientApiMode } from "@/lib/client-env";
+import { readApiResult } from "@/lib/api-client";
 
 export default function PassesPage() {
   const session = useSession();
@@ -47,25 +46,15 @@ export default function PassesPage() {
   useEffect(() => {
     let mounted = true;
     async function load() {
-      setListState("loading");
-
-      const result = await fetchList<MockPass>("/api/passes");
-
-      if (!mounted) return;
-
-      if (result.ok) {
-        setPasses(result.data);
-        previousPassesRef.current = result.data;
-        setListState("loaded");
-      } else if (result.code === "UNSUPPORTED_IN_LIVE_MODE") {
-        setListState("unsupported");
-      } else if (apiMode === "live") {
-        // Network/server error in live mode — show error state
-        setListState("error");
-      } else {
-        // Mock/dev mode — fall back to mock data
-        console.warn("[PassesPage] Fetch failed, using mock data:", result.message);
-        setListState("loaded");
+      try {
+        const res = await fetch("/api/passes");
+        const data = await readApiResult<MockPass[]>(res);
+        if (mounted) {
+          setPasses(data);
+          previousPassesRef.current = data;
+        }
+      } catch (err) {
+        console.warn("Falling back to mock passes:", err);
       }
     }
     load();
@@ -81,11 +70,7 @@ export default function PassesPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      if (!res.ok) {
-        const errorData = await res.json().catch(() => ({}));
-        throw new Error(errorData.error || "Failed to update pass");
-      }
-      return res.json();
+      return readApiResult<MockPass>(res);
     },
     onOptimisticUpdate: ({ id, data }) => {
       previousPassesRef.current = passes;
@@ -236,12 +221,7 @@ export default function PassesPage() {
       }),
     });
 
-        if (!res.ok) {
-         const err = await res.json();
-         throw new Error(err.error || "Failed to create pass");
-      }
-
-       const newPass = await res.json();
+       const newPass = await readApiResult<MockPass>(res);
 
         setPasses((prev) => [newPass, ...prev]);
         setIsCreateOpen(false);

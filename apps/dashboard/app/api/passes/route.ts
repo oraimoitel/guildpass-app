@@ -1,10 +1,22 @@
 import { NextResponse } from "next/server";
 import { handleApiError, apiError, apiUnsupported } from "@/lib/api-helpers";
+import {
+  apiError,
+  apiUnsupported,
+  apiValidationError,
+  handleApiError,
+} from "@/lib/api-helpers";
+import { NotFoundError } from "@/lib/api-errors";
 import { mockPasses, type Pass } from "@/lib/mock-data";
 import { MOCK_API_SESSION } from "@/lib/auth/session";
 import { assertPermission, PermissionDeniedError } from "@/lib/permissions";
 import { getApiMode } from "@/lib/env";
 import { getPassRepository } from "@/lib/repositories/factory";
+import {
+  malformedPayloadError,
+  validatePassCreatePayload,
+  validatePassUpdatePayload,
+} from "@/lib/validation/mutations";
 
 /**
  * GET /api/passes
@@ -17,7 +29,11 @@ export async function GET(): Promise<NextResponse> {
 
     if (apiMode === "live") {
       // IntegrationClient currently does not expose pass listing.
-      return apiUnsupported("Pass listing in live mode is not implemented");
+      return apiUnsupported(
+        "passes.list",
+        apiMode,
+        "Pass listing in live mode is not implemented"
+      );
     }
 
     try {
@@ -49,9 +65,20 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   return handleApiError(async () => {
-    const body = await request.json();
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return apiValidationError("Invalid pass payload", malformedPayloadError());
+    }
+
+    const validation = validatePassCreatePayload(body);
+    if (!validation.valid) {
+      return apiValidationError("Invalid pass payload", validation.errors);
+    }
+
     const passRepository = getPassRepository();
-    return await passRepository.create(body);
+    return await passRepository.create(validation.data);
   });
 }
 
@@ -72,13 +99,28 @@ export async function PATCH(request: Request): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
 
-  if (!id) return apiError("Missing pass ID", 400);
+  if (!id) {
+    return apiValidationError("Missing pass ID", [
+      { field: "id", message: "id query parameter is required" },
+    ]);
+  }
 
   return handleApiError(async () => {
-    const body = await request.json();
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return apiValidationError("Invalid pass payload", malformedPayloadError());
+    }
+
+    const validation = validatePassUpdatePayload(body);
+    if (!validation.valid) {
+      return apiValidationError("Invalid pass payload", validation.errors);
+    }
+
     const passRepository = getPassRepository();
-    const updated = await passRepository.update(id, body);
-    if (!updated) throw new Error("Pass not found or update failed");
+    const updated = await passRepository.update(id, validation.data);
+    if (!updated) throw new NotFoundError("Pass not found.");
     return updated;
   });
 }
@@ -100,12 +142,16 @@ export async function DELETE(request: Request): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
 
-  if (!id) return apiError("Missing pass ID", 400);
+  if (!id) {
+    return apiValidationError("Missing pass ID", [
+      { field: "id", message: "id query parameter is required" },
+    ]);
+  }
 
   return handleApiError(async () => {
     const passRepository = getPassRepository();
     const success = await passRepository.delete(id);
-    if (!success) throw new Error("Pass not found or deletion failed");
+    if (!success) throw new NotFoundError("Pass not found.");
     return { success: true };
   });
 }
